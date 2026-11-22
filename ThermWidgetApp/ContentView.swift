@@ -1,12 +1,8 @@
 import SwiftUI
 import UIKit
-import WidgetKit
 
 struct ContentView: View {
-    @Binding var snapshot: ThermalSnapshot
-    @Binding var unit: ThermTemperatureUnit
-    @Binding var isLiveEnabled: Bool
-    let onRefresh: () -> Void
+    @ObservedObject var model: ThermalMonitorModel
 
     private static let timeFormatter: DateFormatter = {
         let fmt = DateFormatter()
@@ -23,42 +19,48 @@ struct ContentView: View {
             .navigationTitle("硬件温度")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(unit == .celsius ? "°C" : "°F") {
-                        unit = (unit == .celsius) ? .fahrenheit : .celsius
-                        ThermDataStore.preferredUnit = unit
-                        WidgetCenter.shared.reloadAllTimelines()
+                    Button(model.unit == .celsius ? "°C" : "°F") {
+                        model.toggleUnit()
                     }
                     .font(.headline.monospacedDigit())
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
-                        isLiveEnabled.toggle()
-                        if isLiveEnabled {
-                            onRefresh()
-                        }
+                        model.isLiveEnabled.toggle()
                     } label: {
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(isLiveEnabled ? Color.green : Color.gray)
+                                .fill(model.isLiveEnabled ? Color.green : Color.gray)
                                 .frame(width: 7, height: 7)
-                            Text(isLiveEnabled ? "实时" : "暂停")
+                            Text(model.isLiveEnabled ? "实时" : "暂停")
                                 .font(.subheadline)
                         }
                     }
-                    Button(action: onRefresh) {
+                    Button {
+                        model.sample(reloadWidgets: true)
+                    } label: {
                         Image(systemName: "arrow.clockwise")
                     }
                 }
             }
             .refreshable {
-                onRefresh()
+                model.sample(reloadWidgets: true)
+            }
+            .onAppear {
+                model.sample(reloadWidgets: true)
+                if model.isLiveEnabled {
+                    model.startTimer()
+                }
             }
         }
         .navigationViewStyle(.stack)
     }
 
     private var overviewSection: some View {
-        Section {
+        let snapshot = model.snapshot
+        let unit = model.unit
+
+        return Section {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 MetricTile(
                     title: "电池温度",
@@ -88,9 +90,9 @@ struct ContentView: View {
             .padding(.vertical, 4)
 
             HStack {
-                Text(isLiveEnabled ? "前台每秒实时刷新" : "实时刷新已暂停")
+                Text(model.isLiveEnabled ? "前台每秒实时刷新" : "实时刷新已暂停")
                     .font(.caption)
-                    .foregroundColor(isLiveEnabled ? .green : .secondary)
+                    .foregroundColor(model.isLiveEnabled ? .green : .secondary)
                 Spacer()
                 Text("\(Self.timeFormatter.string(from: snapshot.timestamp)) · \(snapshot.sensors.count) 路")
                     .font(.caption.monospacedDigit())
@@ -99,12 +101,15 @@ struct ContentView: View {
         } header: {
             Text("核心概览（只读）")
         } footer: {
-            Text("App 在前台时每秒自动刷新，退回桌面时自动将最新数据同步到小组件。注：SoC/PMU 硅片结温通常比机身表面高 25–50°C。")
+            Text("App 在前台时每秒自动刷新（滑动列表时也持续更新），退回桌面时自动同步到小组件。注：SoC/PMU 硅片结温通常比机身表面高 25–50°C。")
         }
     }
 
     @ViewBuilder
     private var sensorBreakdownSections: some View {
+        let snapshot = model.snapshot
+        let unit = model.unit
+
         if snapshot.sensors.isEmpty {
             Section("传感器明细") {
                 Text("未读取到 HID 温度传感器，请确认通过 TrollStore Lite 安装且保留完整权限。")
