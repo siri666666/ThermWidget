@@ -3,12 +3,17 @@ import SwiftUI
 
 enum SensorCategory: String, CaseIterable, Codable, Identifiable {
     case battery = "电池"
-    case soc = "SoC 核心"
+    case skin = "机身表面"
+    case soc = "SoC / CPU 结温"
     case power = "电源 / 充电"
     case storageAndDisplay = "存储 / 屏幕"
-    case peripheral = "相机 / 射频 / 其它"
+    case peripheral = "外围 / 其它"
 
     var id: String { rawValue }
+
+    var isDieCategory: Bool {
+        self == .soc
+    }
 }
 
 struct ThermalSensorItem: Identifiable, Codable, Equatable {
@@ -21,10 +26,11 @@ struct ThermalSensorItem: Identifiable, Codable, Equatable {
 struct ThermalSnapshot: Codable, Equatable {
     let timestamp: Date
     let batteryCelsius: Double?
+    let skinCelsius: Double?
     let socCelsius: Double?
+    let socMaxCelsius: Double?
     let powerCelsius: Double?
     let nandCelsius: Double?
-    let deviceAvgCelsius: Double?
     let maxCelsius: Double?
     let maxSensorName: String?
     let isCharging: Bool
@@ -79,7 +85,7 @@ enum ThermTemperatureUnit: String, Codable {
 
 enum ThermDataStore {
     static let appGroupID = "group.com.siri666666.thermwidget"
-    private static let snapshotKey = "latest_thermal_snapshot_v1"
+    private static let snapshotKey = "latest_thermal_snapshot_v2"
     private static let unitKey = "preferred_temperature_unit_v1"
 
     private static var defaults: UserDefaults {
@@ -99,17 +105,30 @@ enum ThermDataStore {
         }
     }
 
+    static func isDerivedAggregateSensor(name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("Max:") || trimmed.hasPrefix("Avg:") || trimmed.hasPrefix("Min:")
+    }
+
     static func classifySensor(name: String) -> SensorCategory {
         let lower = name.lowercased()
+        // Check battery first
         if lower.contains("batt") || lower.contains("tg0") || lower.contains("tg1") || lower.contains("gas gauge") {
             return .battery
         }
-        if lower.contains("pmgr") || lower.contains("soc") || lower.contains("cpu") || lower.contains("gpu") || lower.contains("ane") || lower.contains("tdie") {
-            return .soc
-        }
+        // Check PMU / Charger BEFORE tdie so "PMU tdie*" stays in power rather than SoC
         if lower.contains("pmu") || lower.contains("charg") || lower.contains("tigris") || lower.contains("hydra") || lower.contains("tristar") || lower.contains("ldo") || lower.contains("buck") || lower.contains("wireless") {
             return .power
         }
+        // Surface / Skin sensors
+        if lower.contains("skin") {
+            return .skin
+        }
+        // SoC / CPU / GPU die sensors (including Apple CPU Complex "ACC Temp Sensor*")
+        if lower.contains("pmgr") || lower.contains("soc") || lower.hasPrefix("acc ") || lower.contains("acc temp") || lower.contains("cpu") || lower.contains("gpu") || lower.contains("ane") || lower.contains("tdie") {
+            return .soc
+        }
+        // Storage & Display
         if lower.contains("nand") || lower.contains("display") || lower.contains("screen") || lower.contains("backlight") || lower.contains("panel") {
             return .storageAndDisplay
         }
@@ -124,7 +143,6 @@ enum ThermDataStore {
     }
 
     static func loadCachedOrCapture() -> ThermalSnapshot {
-        // Capture directly first; if extension sandbox returns empty sensors, fall back to App Group cache.
         let live = parseSnapshot(from: ThermalSensorBridge.readSnapshotDictionary())
         if !live.sensors.isEmpty || live.batteryCelsius != nil {
             save(live)
@@ -148,23 +166,24 @@ enum ThermDataStore {
         let batteryDict = raw["battery"] as? [String: Any]
         let sensorDicts = raw["sensors"] as? [[String: Any]] ?? []
 
-        var parsedSensors: [ThermalSensorItem] = []
-        var nameCounts: [String: Int] = [:]
+        // Filter out redundant Max:/Avg:/Min: aggregate entries and merge duplicate sensor names
+        var groupedValues: [String: [Double]] = [:]
         for item in sensorDicts {
             guard let name = item["name"] as? String,
-                  let celsius = (item["celsius"] as? NSNumber)?.doubleValue else {
+                  let celsius = (item["celsius"] as? NSNumber)?.doubleValue,
+                  !isDerivedAggregateSensor(name: name) else {
                 continue
             }
-            let count = (nameCounts[name] ?? 0) + 1
-            nameCounts[name] = count
-            let uniqueID = count == 1 ? name : "\(name)#\(count)"
-            parsedSensors.append(
-                ThermalSensorItem(
-                    id: uniqueID,
-                    name: name,
-                    celsius: celsius,
-                    category: classifySensor(name: name)
-                )
+            groupedValues[name, default: []].append(celsius)
+        }
+
+        var parsedSensors: [ThermalSensorItem] = groupedValues.map { name, values in
+            let avg = values.reduce(0.0, +) / Double(values.count)
+            return ThermalSensorItem(
+                id: name,
+                name: name,
+                celsius: avg,
+                category: classifySensor(name: name)
             )
         }
 
@@ -179,21 +198,42 @@ enum ThermDataStore {
         let hidBatteryC = parsedSensors.first { $0.category == .battery }?.celsius
         let batteryC = rawBatteryC ?? hidBatteryC
 
-        let socC = parsedSensors.first { $0.category == .soc }?.celsius
-        let powerC = parsedSensors.first { $0.category == .power }?.celsius
-        let nandC = parsedSensors.first { $0.name.lowercased().contains("nand") }?.celsius
+        // Surface / Skin average (falls back to PMU tdev board sensors if unavailable)
+        let skinSensors = parsedSensors.filter { $0.category == .skin }
+        let tdevSensors = parsedSensors.filter { $0.name.lowercased().contains("tdev") }
+        let skinC: Double?
+        if !skinSensors.isEmpty {
+            skinC = skinSensors.map(\.celsius).reduce(0.0, +) / Double(skinSensors.count)
+        } else if !tdevSensors.isEmpty {
+            skinC = tdevSensors.map(\.celsius).reduce(0.0, +) / Double(tdevSensors.count)
+        } else {
+            skinC = batteryC
+        }
 
-        let validTemps = parsedSensors.map(\.celsius).filter { $0 > 5.0 && $0 < 105.0 }
-        let avgC: Double? = validTemps.isEmpty ? batteryC : (validTemps.reduce(0.0, +) / Double(validTemps.count))
+        // SoC die average & peak (real physical die channels)
+        let socSensors = parsedSensors.filter { $0.category == .soc }
+        let socC: Double? = socSensors.isEmpty ? nil : (socSensors.map(\.celsius).reduce(0.0, +) / Double(socSensors.count))
+        let socMaxC: Double? = socSensors.map(\.celsius).max()
+
+        // Power / Charger board sensors (prefer Charger / PMU tdev over 15x PMU tdie)
+        let powerBoardSensors = parsedSensors.filter {
+            $0.category == .power && !$0.name.lowercased().contains("tdie") && !$0.name.lowercased().contains("tjunc")
+        }
+        let allPowerSensors = parsedSensors.filter { $0.category == .power }
+        let powerSource = powerBoardSensors.isEmpty ? allPowerSensors : powerBoardSensors
+        let powerC: Double? = powerSource.isEmpty ? nil : (powerSource.map(\.celsius).reduce(0.0, +) / Double(powerSource.count))
+
+        let nandC = parsedSensors.first { $0.name.lowercased().contains("nand") }?.celsius
         let hottest = parsedSensors.first
 
         return ThermalSnapshot(
             timestamp: Date(timeIntervalSince1970: timestampSeconds),
             batteryCelsius: batteryC,
+            skinCelsius: skinC,
             socCelsius: socC,
+            socMaxCelsius: socMaxC,
             powerCelsius: powerC,
             nandCelsius: nandC,
-            deviceAvgCelsius: avgC,
             maxCelsius: hottest?.celsius,
             maxSensorName: hottest?.name,
             isCharging: (batteryDict?["isCharging"] as? NSNumber)?.boolValue ?? false,
@@ -205,13 +245,31 @@ enum ThermDataStore {
         )
     }
 
-    static func colorForCelsius(_ celsius: Double?) -> Color {
+    static func colorForBoardCelsius(_ celsius: Double?) -> Color {
         guard let c = celsius else { return .secondary }
         switch c {
         case ..<25: return .cyan
-        case 25..<37: return .green
-        case 37..<43: return .orange
+        case 25..<38: return .green
+        case 38..<44: return .orange
         default: return .red
         }
+    }
+
+    static func colorForDieCelsius(_ celsius: Double?) -> Color {
+        guard let c = celsius else { return .secondary }
+        switch c {
+        case ..<45: return .cyan
+        case 45..<72: return .green
+        case 72..<90: return .orange
+        default: return .red
+        }
+    }
+
+    static func colorForSensor(_ item: ThermalSensorItem) -> Color {
+        let lower = item.name.lowercased()
+        if item.category == .soc || lower.contains("tdie") || lower.contains("tjunc") {
+            return colorForDieCelsius(item.celsius)
+        }
+        return colorForBoardCelsius(item.celsius)
     }
 }

@@ -14,16 +14,17 @@ struct ThermTimelineProvider: TimelineProvider {
             date: Date(),
             snapshot: ThermalSnapshot(
                 timestamp: Date(),
-                batteryCelsius: 31.4,
-                socCelsius: 36.8,
-                powerCelsius: 34.2,
-                nandCelsius: 33.1,
-                deviceAvgCelsius: 33.5,
-                maxCelsius: 36.8,
-                maxSensorName: "PMGR",
+                batteryCelsius: 33.4,
+                skinCelsius: 38.2,
+                socCelsius: 62.5,
+                socMaxCelsius: 68.0,
+                powerCelsius: 44.1,
+                nandCelsius: 42.0,
+                maxCelsius: 68.0,
+                maxSensorName: "PMGR SOC Die Temp Sensor0",
                 isCharging: false,
                 externalConnected: false,
-                batteryCapacity: 88,
+                batteryCapacity: 80,
                 thermalStateRaw: 0,
                 thermalPressureRaw: 0,
                 sensors: []
@@ -86,9 +87,9 @@ struct ThermDashboardWidgetEntryView: View {
                     .foregroundColor(entry.snapshot.thermalLevelColor)
             }
 
-            rowItem(label: "电池", temp: entry.snapshot.batteryCelsius)
-            rowItem(label: "核心", temp: entry.snapshot.socCelsius)
-            rowItem(label: "均温", temp: entry.snapshot.deviceAvgCelsius)
+            rowItem(label: "电池", temp: entry.snapshot.batteryCelsius, isDie: false)
+            rowItem(label: "机身", temp: entry.snapshot.skinCelsius, isDie: false)
+            rowItem(label: "核心", temp: entry.snapshot.socCelsius, isDie: true)
 
             Spacer(minLength: 0)
             HStack {
@@ -126,19 +127,19 @@ struct ThermDashboardWidgetEntryView: View {
             }
 
             HStack(spacing: 10) {
-                cellCard(title: "电池", temp: entry.snapshot.batteryCelsius)
-                cellCard(title: "SoC 核心", temp: entry.snapshot.socCelsius)
-                cellCard(title: "电源区", temp: entry.snapshot.powerCelsius)
-                cellCard(title: "机身均温", temp: entry.snapshot.deviceAvgCelsius)
+                cellCard(title: "电池", temp: entry.snapshot.batteryCelsius, isDie: false)
+                cellCard(title: "机身表面", temp: entry.snapshot.skinCelsius, isDie: false)
+                cellCard(title: "SoC 结温", temp: entry.snapshot.socCelsius, isDie: true)
+                cellCard(title: "闪存", temp: entry.snapshot.nandCelsius ?? entry.snapshot.powerCelsius, isDie: false)
             }
 
             HStack {
-                Text("热点: \(entry.snapshot.maxSensorName ?? "--") \(entry.unit.format(entry.snapshot.maxCelsius))")
+                Text("核心峰值: \(entry.unit.format(entry.snapshot.socMaxCelsius)) · 电源板: \(entry.unit.format(entry.snapshot.powerCelsius))")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                 Spacer()
-                Text("点按更新")
+                Text("点按进实时")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -150,10 +151,10 @@ struct ThermDashboardWidgetEntryView: View {
 
     private var accessoryRectView: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("电池 \(entry.unit.format(entry.snapshot.batteryCelsius)) · 核心 \(entry.unit.format(entry.snapshot.socCelsius))")
+            Text("电池 \(entry.unit.format(entry.snapshot.batteryCelsius)) · 机身 \(entry.unit.format(entry.snapshot.skinCelsius))")
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .lineLimit(1)
-            Text("均温 \(entry.unit.format(entry.snapshot.deviceAvgCelsius)) · \(entry.snapshot.thermalLevelLabel)")
+            Text("结温 \(entry.unit.format(entry.snapshot.socCelsius)) · \(entry.snapshot.thermalLevelLabel)")
                 .font(.caption2.monospacedDigit())
                 .foregroundColor(.secondary)
                 .lineLimit(1)
@@ -165,10 +166,10 @@ struct ThermDashboardWidgetEntryView: View {
     }
 
     private var accessoryInlineView: some View {
-        Text("电 \(entry.unit.format(entry.snapshot.batteryCelsius)) 核 \(entry.unit.format(entry.snapshot.socCelsius))")
+        Text("电 \(entry.unit.format(entry.snapshot.batteryCelsius)) 机 \(entry.unit.format(entry.snapshot.skinCelsius))")
     }
 
-    private func rowItem(label: String, temp: Double?) -> some View {
+    private func rowItem(label: String, temp: Double?, isDie: Bool) -> some View {
         HStack {
             Text(label)
                 .font(.caption)
@@ -176,11 +177,11 @@ struct ThermDashboardWidgetEntryView: View {
             Spacer()
             Text(entry.unit.format(temp))
                 .font(.callout.weight(.bold).monospacedDigit())
-                .foregroundColor(ThermDataStore.colorForCelsius(temp))
+                .foregroundColor(isDie ? ThermDataStore.colorForDieCelsius(temp) : ThermDataStore.colorForBoardCelsius(temp))
         }
     }
 
-    private func cellCard(title: String, temp: Double?) -> some View {
+    private func cellCard(title: String, temp: Double?, isDie: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.caption2)
@@ -188,7 +189,7 @@ struct ThermDashboardWidgetEntryView: View {
                 .lineLimit(1)
             Text(entry.unit.format(temp))
                 .font(.headline.weight(.bold).monospacedDigit())
-                .foregroundColor(ThermDataStore.colorForCelsius(temp))
+                .foregroundColor(isDie ? ThermDataStore.colorForDieCelsius(temp) : ThermDataStore.colorForBoardCelsius(temp))
                 .minimumScaleFactor(0.75)
                 .lineLimit(1)
         }
@@ -207,7 +208,7 @@ struct ThermDashboardWidget: Widget {
             ThermDashboardWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("硬件温度监控")
-        .description("只读显示电池、SoC核心、电源区与机身均温，点一下立即刷新。")
+        .description("只读显示电池、机身表面、SoC结温与闪存温度，点一下进实时并刷新。")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
     }
 }

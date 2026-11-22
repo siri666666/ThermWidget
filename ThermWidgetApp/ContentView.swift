@@ -5,6 +5,7 @@ import WidgetKit
 struct ContentView: View {
     @Binding var snapshot: ThermalSnapshot
     @Binding var unit: ThermTemperatureUnit
+    @Binding var isLiveEnabled: Bool
     let onRefresh: () -> Void
 
     private static let timeFormatter: DateFormatter = {
@@ -29,9 +30,23 @@ struct ContentView: View {
                     }
                     .font(.headline.monospacedDigit())
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        isLiveEnabled.toggle()
+                        if isLiveEnabled {
+                            onRefresh()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(isLiveEnabled ? Color.green : Color.gray)
+                                .frame(width: 7, height: 7)
+                            Text(isLiveEnabled ? "实时" : "暂停")
+                                .font(.subheadline)
+                        }
+                    }
                     Button(action: onRefresh) {
-                        Label("刷新", systemImage: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
             }
@@ -48,43 +63,43 @@ struct ContentView: View {
                 MetricTile(
                     title: "电池温度",
                     value: unit.format(snapshot.batteryCelsius),
-                    accent: ThermDataStore.colorForCelsius(snapshot.batteryCelsius),
+                    accent: ThermDataStore.colorForBoardCelsius(snapshot.batteryCelsius),
                     subtitle: snapshot.isCharging ? "充电中" : (snapshot.externalConnected ? "已接电源" : "未接电")
                 )
                 MetricTile(
-                    title: "SoC 核心",
-                    value: unit.format(snapshot.socCelsius),
-                    accent: ThermDataStore.colorForCelsius(snapshot.socCelsius),
+                    title: "机身表面",
+                    value: unit.format(snapshot.skinCelsius),
+                    accent: ThermDataStore.colorForBoardCelsius(snapshot.skinCelsius),
                     subtitle: "温控: \(snapshot.thermalLevelLabel)"
                 )
                 MetricTile(
-                    title: "电源 / 充电区",
-                    value: unit.format(snapshot.powerCelsius),
-                    accent: ThermDataStore.colorForCelsius(snapshot.powerCelsius),
-                    subtitle: "NAND: \(unit.format(snapshot.nandCelsius))"
+                    title: "SoC 硅片结温",
+                    value: unit.format(snapshot.socCelsius),
+                    accent: ThermDataStore.colorForDieCelsius(snapshot.socCelsius),
+                    subtitle: "核心峰值: \(unit.format(snapshot.socMaxCelsius))"
                 )
                 MetricTile(
-                    title: "多传感器均值",
-                    value: unit.format(snapshot.deviceAvgCelsius),
-                    accent: ThermDataStore.colorForCelsius(snapshot.deviceAvgCelsius),
-                    subtitle: "最高: \(unit.format(snapshot.maxCelsius))"
+                    title: "电源板 / 闪存",
+                    value: unit.format(snapshot.powerCelsius),
+                    accent: ThermDataStore.colorForBoardCelsius(snapshot.powerCelsius),
+                    subtitle: "NAND: \(unit.format(snapshot.nandCelsius))"
                 )
             }
             .padding(.vertical, 4)
 
             HStack {
-                Text("已同步小组件 · 更新时间 \(Self.timeFormatter.string(from: snapshot.timestamp))")
+                Text(isLiveEnabled ? "前台每秒实时刷新" : "实时刷新已暂停")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(isLiveEnabled ? .green : .secondary)
                 Spacer()
-                Text("\(snapshot.sensors.count) 路")
+                Text("\(Self.timeFormatter.string(from: snapshot.timestamp)) · \(snapshot.sensors.count) 路")
                     .font(.caption.monospacedDigit())
                     .foregroundColor(.secondary)
             }
         } header: {
             Text("核心概览（只读）")
         } footer: {
-            Text("点击桌面小组件进入此页时已自动重读传感器并刷新小组件；按 Home 键返回桌面即可看到最新数据。")
+            Text("App 在前台时每秒自动刷新，退回桌面时自动将最新数据同步到小组件。注：SoC/PMU 硅片结温通常比机身表面高 25–50°C。")
         }
     }
 
@@ -109,7 +124,7 @@ struct ContentView: View {
                                 Spacer()
                                 Text(unit.format(item.celsius))
                                     .font(.subheadline.weight(.semibold).monospacedDigit())
-                                    .foregroundColor(ThermDataStore.colorForCelsius(item.celsius))
+                                    .foregroundColor(ThermDataStore.colorForSensor(item))
                             }
                         }
                     }
