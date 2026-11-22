@@ -1,0 +1,54 @@
+name: ThermWidget
+options:
+  bundleIdPrefix: com.siri666666
+  deploymentTarget:
+    iOS: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_BITCODE: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+    DEVELOPMENT_TEAM: ""
+    PROVISIONING_PROFILE_SPECIFIER: ""
+
+targets:
+  ThermWidgetApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: ThermWidgetApp
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.siri666666.thermwidget
+        PRODUCT_NAME: ThermWidgetApp
+        INFOPLIST_FILE: ThermWidgetApp/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: Shared/ThermWidget-Bridging-Header.h
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    dependencies:
+      - target: ThermWidgetExtension
+        embed: true
+        codeSign: false
+
+  ThermWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ThermWidgetExtension
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.siri666666.thermwidget.widget
+        PRODUCT_NAME: ThermWidgetExtension
+        INFOPLIST_FILE: ThermWidgetExtension/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: Shared/ThermWidget-Bridging-Header.h
+        APPLICATION_EXTENSION_API_ONLY: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework

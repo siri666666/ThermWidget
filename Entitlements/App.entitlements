@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>application-identifier</key>
+	<string>THERM00001.com.siri666666.thermwidget</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>THERM00001</string>
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.siri666666.thermwidget</string>
+	</array>
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
+	<key>com.apple.private.hid.client.admin</key>
+	<true/>
+	<key>com.apple.private.hid.client.event-filter</key>
+	<true/>
+	<key>com.apple.private.hid.client.service-protected</key>
+	<true/>
+	<key>com.apple.private.hid.manager.client</key>
+	<true/>
+	<key>com.apple.hid.manager.user-access-privileged</key>
+	<true/>
+	<key>com.apple.hid.manager.user-access-protected</key>
+	<true/>
+	<key>com.apple.private.powersource-read</key>
+	<true/>
+	<key>com.apple.private.iokit.batterydata</key>
+	<true/>
+	<key>com.apple.system.diagnostics.iokit-properties</key>
+	<true/>
+	<key>com.apple.security.iokit-user-client-class</key>
+	<array>
+		<string>IOUserClient</string>
+		<string>AppleSmartBatteryManagerUserClient</string>
+		<string>IOHIDLibUserClient</string>
+	</array>
+	<key>com.apple.security.exception.iokit-user-client-class</key>
+	<array>
+		<string>IOUserClient</string>
+		<string>AppleSmartBatteryManagerUserClient</string>
+		<string>IOHIDLibUserClient</string>
+	</array>
+</dict>
+</plist>
